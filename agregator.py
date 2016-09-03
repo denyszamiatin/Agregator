@@ -98,4 +98,9 @@ def remove_html_tags(page):
     return re.sub('\s+', ' ', without_tags)
 
 
-
+if __name__ == '__main__':
+    for url in get_url_list_from_file('urls.txt'):
+        page = get_content(url)
+        decode_page = decode(page)
+        page_without_tags = remove_html_tags(decode_page)
+        debug = True
