@@ -1,0 +1,2 @@
+requests==2.11.1
+chardet==2.3.0

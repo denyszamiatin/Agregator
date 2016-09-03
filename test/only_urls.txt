@@ -1,0 +1,6 @@
+http://itea.ua/courses-itea/python/python-advanced/
+https://www.fullstackpython.com/best-python-resources.html
+
+
+
+https://pymotw.com/3/          https://www.python.org/dev/peps/pep-0020/
