@@ -32,6 +32,9 @@ def get_url_list_from_file(file_path='urls.txt'):
     Traceback (most recent call last):
     ...
     agregator.AgregatorError: File not found
+<<<<<<< .merge_file_a33508
+=======
+
     """
     try:
         with open(os.path.normpath(file_path), 'r') as f:
