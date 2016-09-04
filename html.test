@@ -1,0 +1,14 @@
+<html><head><title>The Dormouse's story</title></head>
+    <body>
+    <p class="title"><b>The Dormouse's story</b></p>
+    <h1> This is a H1 </h1>
+    <h2> This is a H2 </h2>
+    <h3> This is a H3 </h3>
+    <p> This is a text with xHTML("BR \" tag)<br \> <!----- Comment-->
+    <p class="story">Once upon a time there were three little sisters; and their names were
+    <a href="http://example.com/elsie" class="sister" id="link1">Elsie</a>,
+    <a href="http://example.com/lacie" class="sister" id="link2">Lacie</a> and
+    <a href="http://example.com/tillie" class="sister" id="link3">Tillie</a>;
+    and they lived at the bottom of a well.</p>
+    <h5> This is a Broken H1
+    <p class="story">...</p>

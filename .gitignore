@@ -1,3 +1,5 @@
+# Created by .ignore support plugin (hsz.mobi)
+### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -87,3 +89,11 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+### Example user template
+
+# IntelliJ project files
+.idea
+*.iml
+out
+gen
