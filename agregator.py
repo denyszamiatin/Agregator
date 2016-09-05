@@ -4,7 +4,10 @@ import re
 import os.path
 
 
-VALID_URL_TEMPLATE = re.compile('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+VALID_URL_TEMPLATE = re.compile(
+    'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F]'
+    '[0-9a-fA-F]))+'
+)
 
 
 class AgregatorError(Exception):
@@ -32,8 +35,6 @@ def get_url_list_from_file(file_path='urls.txt'):
     Traceback (most recent call last):
     ...
     agregator.AgregatorError: File not found
-<<<<<<< .merge_file_a33508
-=======
 
     """
     try:
@@ -41,12 +42,10 @@ def get_url_list_from_file(file_path='urls.txt'):
             url_file = f.read()
     except FileNotFoundError:
         raise AgregatorError('File not found')
-    else:
-        url_list = list([url for url in url_file.split() if check_url(url)])
-        if url_list:
-            return url_list
-        else:
-            raise AgregatorError('No url in set file')
+    url_list = [url for url in url_file.split() if check_url(url)]
+    if not url_list:
+        raise AgregatorError('No url in set file')
+    return url_list
 
 
 def check_url(url):
@@ -59,10 +58,7 @@ def check_url(url):
     >>> check_url('Python')
     False
     """
-
-    if VALID_URL_TEMPLATE.search(url):
-        return True
-    return False
+    return bool(VALID_URL_TEMPLATE.fullmatch(url))
 
 
 def get_content(url):
@@ -73,7 +69,6 @@ def get_content(url):
     >>> type(get_content('hts://pysad2asdmotw.com/3/'))
     <class 'NoneType'>
     """
-
     try:
         if requests.head(url).status_code == 200:
             return requests.get(url).content
@@ -85,8 +80,8 @@ def get_content(url):
 
 def decode(data):
     """Decode raw data to unicode string."""
+    charset = chardet.detect(data)['encoding']
     try:
-        charset = chardet.detect(data)['encoding']
         return data.decode(charset)
     except ValueError:
         return ''
