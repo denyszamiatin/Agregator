@@ -89,7 +89,7 @@ def decode(data):
 
 
 def remove_html_tags(page):
-    """Remove HTML tags and remove more one whitespace characters."""
+    """Remove HTML tags and remove"""
     soup = BeautifulSoup(page, 'html.parser')
     return soup.get_text()
 
