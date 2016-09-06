@@ -2,6 +2,7 @@ import chardet
 import requests
 import re
 import os.path
+from bs4 import BeautifulSoup
 
 
 VALID_URL_TEMPLATE = re.compile(
@@ -89,8 +90,8 @@ def decode(data):
 
 def remove_html_tags(page):
     """Remove HTML tags and remove more one whitespace characters."""
-    without_tags = re.sub('<[^<]+?>', '', page)
-    return re.sub('\s+', ' ', without_tags)
+    soup = BeautifulSoup(page, 'html.parser')
+    return soup.get_text()
 
 
 if __name__ == '__main__':
