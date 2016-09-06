@@ -10,6 +10,8 @@ VALID_URL_TEMPLATE = re.compile(
     '[0-9a-fA-F]))+'
 )
 
+REMOVE_MULTIPLE_WATER_SPACE = re.compile('\s+')
+
 
 class AgregatorError(Exception):
     pass
@@ -88,10 +90,23 @@ def decode(data):
         return ''
 
 
+def remove_special_tags(soup, tags):
+    """Completely remove script or style or any other special tags."""
+    for script in soup(tags):
+        script.extract()
+    return soup
+
+
+def remove_multiple_water_spaces(text):
+    """Remove multiple water spaces"""
+    return REMOVE_MULTIPLE_WATER_SPACE.sub(' ', text)
+
+
 def remove_html_tags(page):
-    """Remove HTML tags and remove"""
+    """Remove HTML tags and remove."""
     soup = BeautifulSoup(page, 'html.parser')
-    return soup.get_text()
+    remove_special_tags(soup, ["script", "style"])
+    return remove_multiple_water_spaces(soup.get_text())
 
 
 if __name__ == '__main__':
@@ -99,4 +114,5 @@ if __name__ == '__main__':
         page = get_content(url)
         decode_page = decode(page)
         page_without_tags = remove_html_tags(decode_page)
+        print(page_without_tags)
         debug = True
