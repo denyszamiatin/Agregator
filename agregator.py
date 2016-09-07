@@ -3,6 +3,7 @@ import requests
 import re
 import os.path
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 
 VALID_URL_TEMPLATE = re.compile(
@@ -15,7 +16,6 @@ REMOVE_MULTIPLE_WATER_SPACE = re.compile('\s+')
 
 class AgregatorError(Exception):
     pass
-
 
 def get_url_list_from_file(file_path='urls.txt'):
     """
@@ -109,17 +109,38 @@ def remove_html_tags(page):
     return remove_multiple_water_spaces(soup.get_text())
 
 
-def get_urls_from_page(page):
+def validate_domain_in_url(scheme, domain, url):
+    url_domain = urlparse(url)[1]
+    if url:
+        if url_domain is domain:
+            return url
+        elif url_domain == '':
+            return "{0}://{1}{3}{2}".format(scheme, domain, url, ('/' if url[0] != '/' else ''))
+        else:
+            return None
+
+
+def get_urls_from_page(page, url):
     """Return list of URLs on HTML page"""
     soup = BeautifulSoup(page, 'html.parser')
-    return [a['href'] for a in soup.find_all('a', href=True)]
+    remove_special_tags(soup, ["script", "style"])
+    url_list = [a['href'] for a in soup.find_all('a', href=True)]
+    domain = urlparse(url)[1]
+    scheme = urlparse(url)[0]
+    clean_url = []
+    for link in url_list:
+        tmp = validate_domain_in_url(scheme, domain, link)
+        if tmp is not None:
+            clean_url.append(tmp)
+    return [a for a in clean_url if check_url(a)]
+
 
 if __name__ == '__main__':
     for url in get_url_list_from_file('urls.txt'):
         page = get_content(url)
         decode_page = decode(page)
         page_without_tags = remove_html_tags(decode_page)
-        url_list = get_urls_from_page(decode_page)
+        url_list = get_urls_from_page(decode_page, url)
         debug = True
         print(page_without_tags)
         print(url_list)
