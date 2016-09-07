@@ -110,6 +110,7 @@ def remove_html_tags(page):
 
 
 def get_urls_from_page(page):
+    """Return list of URLs on HTML page"""
     soup = BeautifulSoup(page, 'html.parser')
     return [a['href'] for a in soup.find_all('a', href=True)]
 
