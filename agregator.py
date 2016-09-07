@@ -1,14 +1,16 @@
-import os.path
-import re
-
 import chardet
-import html2text
 import requests
+import re
+import os.path
+from bs4 import BeautifulSoup
+
 
 VALID_URL_TEMPLATE = re.compile(
     'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F]'
     '[0-9a-fA-F]))+'
 )
+
+REMOVE_MULTIPLE_WATER_SPACE = re.compile('\s+')
 
 
 class AgregatorError(Exception):
@@ -18,17 +20,17 @@ class AgregatorError(Exception):
 def get_url_list_from_file(file_path='urls.txt'):
     """
     Open file and return urls.txt of valid urls.txt.
-    >>> get_url_list_from_file(file_path='./tests/only_urls.txt')
+    >>> get_url_list_from_file(file_path='./test/only_urls.txt')
     ['http://itea.ua/courses-itea/python/python-advanced/', \
 'https://www.fullstackpython.com/best-python-resources.html', \
 'https://pymotw.com/3/', \
 'https://www.python.org/dev/peps/pep-0020/']
-    >>> get_url_list_from_file(file_path='./tests/mix_text_urls.txt')
+    >>> get_url_list_from_file(file_path='./test/mix_text_urls.txt')
     ['http://itea.ua/courses-itea/python/python-advanced/', \
 'https://www.fullstackpython.com/best-python-resources.html', \
 'https://pymotw.com/3/', \
 'https://www.python.org/dev/peps/pep-0020/']
-    >>> get_url_list_from_file(file_path='./tests/text_without_url.txt')
+    >>> get_url_list_from_file(file_path='./test/text_without_url.txt')
     Traceback (most recent call last):
     ...
     agregator.AgregatorError: No url in set file
@@ -88,19 +90,35 @@ def decode(data):
         return ''
 
 
-def remove_html_tags(html):
-    """ Return text without tags, and dict with content of tags"""
-    clear_page = html2text.HTML2Text()
-    clear_page.ignore_images = True
-    clear_page.ignore_links = True
-    return clear_page.handle(html)
+def remove_special_tags(soup, tags):
+    """Completely remove script or style or any other special tags."""
+    for script in soup(tags):
+        script.extract()
+    return soup
 
+
+def remove_multiple_water_spaces(text):
+    """Remove multiple water spaces"""
+    return REMOVE_MULTIPLE_WATER_SPACE.sub(' ', text)
+
+
+def remove_html_tags(page):
+    """Remove HTML tags and remove."""
+    soup = BeautifulSoup(page, 'html.parser')
+    remove_special_tags(soup, ["script", "style"])
+    return remove_multiple_water_spaces(soup.get_text())
+
+
+def get_urls_from_page(page):
+    soup = BeautifulSoup(page, 'html.parser')
+    return [a['href'] for a in soup.find_all('a', href=True)]
 
 if __name__ == '__main__':
-
     for url in get_url_list_from_file('urls.txt'):
         page = get_content(url)
         decode_page = decode(page)
         page_without_tags = remove_html_tags(decode_page)
+        url_list = get_urls_from_page(decode_page)
         debug = True
         print(page_without_tags)
+        print(url_list)
