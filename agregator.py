@@ -113,7 +113,7 @@ def validate_domain_in_url(scheme, domain, url):
     """Return absolute url if domain in url or url is relative another return none"""
     url_domain = urlparse(url)[1]
     if url:
-        if url_domain is domain:
+        if url_domain == domain:
             return url
         elif url_domain == '':
             return "{0}://{1}{3}{2}".format(scheme, domain, url, ('/' if url[0] != '/' else ''))
