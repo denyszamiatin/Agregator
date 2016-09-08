@@ -12,7 +12,7 @@ VALID_URL_TEMPLATE = re.compile(
     '[0-9a-fA-F]))+'
 )
 
-REMOVE_MULTIPLE_WATER_SPACE = re.compile('\s+')
+REMOVE_MULTIPLE_WHITE_SPACE = re.compile('\s+')
 
 
 class AgregatorError(Exception):
@@ -61,8 +61,10 @@ def check_url(url):
     True
     >>> check_url('Python')
     False
+    >>> check_url(None)
+    False
     """
-    return bool(VALID_URL_TEMPLATE.fullmatch(url))
+    return bool(url and VALID_URL_TEMPLATE.fullmatch(url))
 
 
 def get_content(url):
@@ -98,58 +100,50 @@ def remove_special_tags(soup, tags):
     return soup
 
 
-def remove_multiple_water_spaces(text):
-    """Remove multiple water spaces"""
-    return REMOVE_MULTIPLE_WATER_SPACE.sub(' ', text)
+def remove_multiple_white_spaces(text):
+    """Remove multiple white spaces"""
+    return ' '.join(text.split())
 
 
 def remove_html_tags(page):
     """Remove HTML tags and remove."""
     soup = BeautifulSoup(page, 'html.parser')
     remove_special_tags(soup, ["script", "style"])
-    return remove_multiple_water_spaces(soup.get_text())
+    return remove_multiple_white_spaces(soup.get_text())
 
 
 def validate_domain_in_url(scheme, domain, url):
     """Return absolute url if domain in url or url is relative another return none"""
-    url_domain = urlparse(url)[1]
     if url:
+        url_domain = urlparse(url)[1]
         if url_domain == domain:
             return url
         elif url_domain == '':
-            return "{0}://{1}{3}{2}".format(scheme, domain, url, ('/' if url[0] != '/' else ''))
-        else:
-            return None
+            return "{0}://{1}{3}{2}".format(
+                scheme, domain, url, ('/' if url[0] != '/' else '')
+            )
+    return None
 
 
-def get_urls_from_page(page, url):
+def get_urls_from_page(page, current_url):
     """Return list of URLs on HTML page"""
     soup = BeautifulSoup(page, 'html.parser')
     remove_special_tags(soup, ["script", "style"])
-    url_list = [a['href'] for a in soup.find_all('a', href=True)]
-    domain = urlparse(url)[1]
-    scheme = urlparse(url)[0]
-    clean_url = []
-    for link in url_list:
-        tmp = validate_domain_in_url(scheme, domain, link)
-        if tmp is not None:
-            clean_url.append(tmp)
-    return [a for a in clean_url if check_url(a)]
+    urls = [a['href'] for a in soup.find_all('a', href=True)]
+    scheme, domain, *tail = urlparse(current_url)
+    clean_url = [validate_domain_in_url(scheme, domain, url) for url in urls]
+    return {a for a in clean_url if check_url(a)}
 
 
 class NormalizeText:
-    def __init__(self, dictionary_path=None,
+    def __init__(self, dictionary_path='dictionaries',
                  undesirable_punctuation='»—▼▲≡©',
                  language=tuple()):
-        if dictionary_path:
-            self.dictionary_path = dictionary_path
-        else:
-            self.dictionary_path = 'dictionaries'
-
+        self.dictionary_path = dictionary_path
         self.language = language
         self.stop_words = self.load_stop_words()
-        self.undesirable_punctuation = re.compile('[%s]' % re.escape(
-            string.punctuation + undesirable_punctuation))
+        self.undesirable_punctuation = {ord(char):' ' for char in
+             (string.punctuation + undesirable_punctuation)}
 
     def load_stop_words(self):
         """
@@ -161,12 +155,11 @@ class NormalizeText:
             with open(file_path, 'r') as f:
                 stop_words.update(set(f.read().splitlines()))
 
+        test_lang = lambda name: name.startswith(self.language)\
+            if self.language else lambda x: True
         for root, dirs, files in os.walk(self.dictionary_path):
             for name in files:
-                if self.language:
-                    if name.startswith(self.language):
-                        update_set(os.path.join(root, name))
-                else:
+                if test_lang(name):
                     update_set(os.path.join(root, name))
 
         return stop_words
@@ -182,7 +175,7 @@ class NormalizeText:
         >>> normalize.normalize('What are your goals?')
         'goals'
         """
-        text = self.undesirable_punctuation.sub(' ', raw_text).lower()
+        text = raw_text.translate(self.undesirable_punctuation).lower()
         text = ' '.join([word for word in text.split() if not word in
                                                               self.stop_words])
         return text
