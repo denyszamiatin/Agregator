@@ -12,9 +12,6 @@ VALID_URL_TEMPLATE = re.compile(
     '[0-9a-fA-F]))+'
 )
 
-REMOVE_MULTIPLE_WHITE_SPACE = re.compile('\s+')
-
-
 class AgregatorError(Exception):
     pass
 
