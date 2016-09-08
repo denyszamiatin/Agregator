@@ -1,10 +1,11 @@
-import chardet
-import requests
-import re
 import os.path
-from bs4 import BeautifulSoup
+import re
+import string
 from urllib.parse import urlparse
 
+import chardet
+import requests
+from bs4 import BeautifulSoup
 
 VALID_URL_TEMPLATE = re.compile(
     'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F]'
@@ -20,17 +21,17 @@ class AgregatorError(Exception):
 def get_url_list_from_file(file_path='urls.txt'):
     """
     Open file and return urls.txt of valid urls.txt.
-    >>> get_url_list_from_file(file_path='./test/only_urls.txt')
+    >>> get_url_list_from_file(file_path='./tests/only_urls.txt')
     ['http://itea.ua/courses-itea/python/python-advanced/', \
 'https://www.fullstackpython.com/best-python-resources.html', \
 'https://pymotw.com/3/', \
 'https://www.python.org/dev/peps/pep-0020/']
-    >>> get_url_list_from_file(file_path='./test/mix_text_urls.txt')
+    >>> get_url_list_from_file(file_path='./tests/mix_text_urls.txt')
     ['http://itea.ua/courses-itea/python/python-advanced/', \
 'https://www.fullstackpython.com/best-python-resources.html', \
 'https://pymotw.com/3/', \
 'https://www.python.org/dev/peps/pep-0020/']
-    >>> get_url_list_from_file(file_path='./test/text_without_url.txt')
+    >>> get_url_list_from_file(file_path='./tests/text_without_url.txt')
     Traceback (most recent call last):
     ...
     agregator.AgregatorError: No url in set file
@@ -136,12 +137,66 @@ def get_urls_from_page(page, url):
     return [a for a in clean_url if check_url(a)]
 
 
+class NormalizeText:
+    def __init__(self, dictionary_path=None,
+                 undesirable_punctuation='»—▼▲≡©',
+                 language=tuple()):
+        if dictionary_path:
+            self.dictionary_path = dictionary_path
+        else:
+            self.dictionary_path = 'dictionaries'
+
+        self.language = language
+        self.stop_words = self.load_stop_words()
+        self.undesirable_punctuation = re.compile('[%s]' % re.escape(
+            string.punctuation + undesirable_punctuation))
+
+    def load_stop_words(self):
+        """
+        Initializes set of stop words(from files in folder)
+        """
+        stop_words = set()
+
+        def update_set(file_path):
+            with open(file_path, 'r') as f:
+                stop_words.update(set(f.read().splitlines()))
+
+        for root, dirs, files in os.walk(self.dictionary_path):
+            for name in files:
+                if self.language:
+                    if name.startswith(self.language):
+                        update_set(os.path.join(root, name))
+                else:
+                    update_set(os.path.join(root, name))
+
+        return stop_words
+
+    def normalize(self, raw_text):
+        """
+        Return normalize text in lower case without: undesirable punctuation
+        and stop words.
+        >>> normalize = NormalizeText()
+        >>> normalize.normalize('Я только хотел сказать, что эти стоп-слова '\
+        '— сложная штука.')
+        'хотел стоп слова сложная штука'
+        >>> normalize.normalize('What are your goals?')
+        'goals'
+        """
+        text = self.undesirable_punctuation.sub(' ', raw_text).lower()
+        text = ' '.join([word for word in text.split() if not word in
+                                                              self.stop_words])
+        return text
+
+
 if __name__ == '__main__':
+    normalize = NormalizeText()
     for url in get_url_list_from_file('urls.txt'):
         page = get_content(url)
         decode_page = decode(page)
         page_without_tags = remove_html_tags(decode_page)
         url_list = get_urls_from_page(decode_page, url)
+        normalize_page = normalize.normalize(page_without_tags)
         debug = True
         print(page_without_tags)
+        print(normalize_page)
         print(url_list)
