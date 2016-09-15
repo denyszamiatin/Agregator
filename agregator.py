@@ -1,6 +1,8 @@
+import binascii
 import os.path
 import re
 import string
+from collections import OrderedDict
 from urllib.parse import urlparse
 
 import chardet
@@ -178,8 +180,54 @@ class NormalizeText:
         return text
 
 
+class ComparingText:
+    """Comparing two text"""
+    _hash_method = OrderedDict({'hash': hash, 'binascii.crc32': binascii.crc32})
+
+    def __init__(self, text1, text2, shingle_length=10):
+        self._shingle_length = shingle_length
+        self.text1 = text1
+        self.text2 = text2
+
+        self._shingle_text1 = self.get_shingles(text1)
+        self._shingle_text2 = self.get_shingles(text2)
+
+        self.hash_text1 = self.get_hash(self._shingle_text1)
+        self.hash_text2 = self.get_hash(self._shingle_text2)
+
+    def get_shingles(self, text):
+        shingles = []
+        s_text = text.split()
+        for i in range(len(s_text) - (self._shingle_length - 1)):
+            shingles.append(' '.join([x for x in s_text[i:i+self._shingle_length]]))
+        return tuple(shingles)
+
+    def get_hash(self, shingle):
+        hash_array = []
+        for method in self._hash_method.values():
+            hash_array.append([])
+            for section in shingle:
+                hash_array[-1].append(method(section.encode()))
+        return hash_array
+
+    def compare(self):
+        same = 0
+        if len(self.hash_text1[0]) >= len(self.hash_text2[0]):
+            text_a, text_b = self.hash_text1, self.hash_text2
+        else:
+            text_b, text_a = self.hash_text1, self.hash_text2
+        min_size = len(text_b[0])
+        for i in range(len(self._hash_method)):
+            for j in range(min_size):
+                if text_b[i][j] in text_a[i]:
+                    same += 1
+        return same * 2 / (float(len(text_a[0]) + len(text_b[0]))*len(self._hash_method)) * 100
+
+
+
 if __name__ == '__main__':
     normalize = NormalizeText()
+    text = []
     for url in get_url_list_from_file('urls.txt'):
         page = get_content(url)
         decode_page = decode(page)
