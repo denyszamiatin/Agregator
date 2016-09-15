@@ -224,7 +224,6 @@ class ComparingText:
         return same * 2 / (float(len(text_a[0]) + len(text_b[0]))*len(self._hash_method)) * 100
 
 
-
 if __name__ == '__main__':
     normalize = NormalizeText()
     text = []
