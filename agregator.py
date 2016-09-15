@@ -205,9 +205,7 @@ class ComparingText:
     def get_hash(self, shingle):
         hash_array = []
         for method in self._hash_method.values():
-            hash_array.append([])
-            for section in shingle:
-                hash_array[-1].append(method(section.encode()))
+            hash_array.append([method(section.encode()) for section in shingle])
         return hash_array
 
     def compare(self):
