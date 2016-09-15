@@ -236,4 +236,8 @@ if __name__ == '__main__':
         debug = True
         print(page_without_tags)
         print(normalize_page)
+        text.append(normalize_page)
         print(url_list)
+
+    comparing = ComparingText(text[0], text[1]).compare()
+    print(comparing)
