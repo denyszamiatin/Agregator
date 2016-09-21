@@ -221,6 +221,33 @@ class ComparingText:
                     same += 1
         return same * 2 / (float(len(text_a[0]) + len(text_b[0]))*len(self._hash_method)) * 100
 
+def controller(page):
+    """
+    Controller  spider which parse pages and return list url and text
+
+    """
+    print(page)
+    level_url = set()
+    level_url_get = {page}
+    map_page_content={}
+    normalize = NormalizeText()
+    url_chek = level_url_get.difference(level_url)
+    while url_chek:
+        url_chek = level_url_get.difference(level_url)
+        for url in url_chek:
+            print(url)
+            level_url.add(url)
+            page = get_content(url)
+            decode_page = decode(page)
+            page_without_tags = remove_html_tags(decode_page)
+            normalize_page = normalize.normalize(page_without_tags)
+            map_page_content [url] =  normalize_page
+            level_url_get.update(get_urls_from_page(decode_page, url))
+            print('len=',len(level_url_get))
+            print ("delta len = ", len(level_url_get)-len(level_url))
+
+    print(map_page_content)
+    return map_page_content
 
 if __name__ == '__main__':
     normalize = NormalizeText()
