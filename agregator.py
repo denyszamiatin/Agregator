@@ -14,10 +14,27 @@ VALID_URL_TEMPLATE = re.compile(
     '[0-9a-fA-F]))+'
 )
 
+
 class AgregatorError(Exception):
     pass
 
-def get_url_list_from_file(file_path='urls.txt'):
+
+def check_url(url):
+    """
+    Check url by regex VALID_URL_TEMPLATE.
+    >>> check_url('http://itea.ua/courses-itea/python/python-advanced/')
+    True
+    >>> check_url('https://www.fullstackpython.com/best-python-resources.html')
+    True
+    >>> check_url('Python')
+    False
+    >>> check_url(None)
+    False
+    """
+    return bool(url and VALID_URL_TEMPLATE.fullmatch(url))
+
+
+def get_url_list_from_file(file_path='urls.txt'): # TODO - this function may be a method of Spider
     """
     Open file and return urls.txt of valid urls.txt.
     >>> get_url_list_from_file(file_path='./tests/only_urls.txt')
@@ -51,87 +68,85 @@ def get_url_list_from_file(file_path='urls.txt'):
     return url_list
 
 
-def check_url(url):
-    """
-    Check url by regex VALID_URL_TEMPLATE.
-    >>> check_url('http://itea.ua/courses-itea/python/python-advanced/')
-    True
-    >>> check_url('https://www.fullstackpython.com/best-python-resources.html')
-    True
-    >>> check_url('Python')
-    False
-    >>> check_url(None)
-    False
-    """
-    return bool(url and VALID_URL_TEMPLATE.fullmatch(url))
+class URLParser:
+    UNDESIRABLE_TAGS = ('script', 'style')
 
+    def __init__(self, url, parser=BeautifulSoup):
+        self._url = url
+        self._parser = parser
+        self._raw_page = self.decode_page(self.get_content())
+        self._parsed_page = self._parser(self._raw_page, 'html.parser')
+        self._remove_special_tags()
+        self._text = self._get_pure_text()
+        self._urls = self._get_urls_from_page()
 
-def get_content(url):
-    """
-    Get web page in bytes format by url. If something wrong return None
-    >>> type(get_content(url='http://itea.ua/courses-itea/python/python-advanced/'))
-    <class 'bytes'>
-    >>> type(get_content('hts://pysad2asdmotw.com/3/'))
-    <class 'NoneType'>
-    """
-    try:
-        if requests.head(url).status_code == 200:
-            return requests.get(url).content
-        else:
+    @property
+    def url(self):
+        return self._url
+
+    @property
+    def raw_page(self):
+        return self.raw_page
+
+    @property
+    def text(self):
+        return self._text
+
+    @property
+    def urls_on_page(self):
+        return self._urls
+
+    def get_content(self):
+        """ Get web page in bytes format by url. If something wrong return None """
+        try:
+            if requests.head(self.url).status_code == 200:
+                return requests.get(self.url).content
+            else:
+                return None
+        except requests.exceptions.RequestException:
             return None
-    except requests.exceptions.RequestException:
-        return None
 
+    @staticmethod
+    def decode_page(data):
+        charset = chardet.detect(data)['encoding']
+        try:
+            return data.decode(charset)
+        except ValueError:
+            return ''
 
-def decode(data):
-    """Decode raw data to unicode string."""
-    charset = chardet.detect(data)['encoding']
-    try:
-        return data.decode(charset)
-    except ValueError:
-        return ''
+    def _remove_special_tags(self):
+        """Completely remove script or style or any other special tags."""
+        for un_t in self._parsed_page(self.UNDESIRABLE_TAGS):
+            un_t.extract()
 
+    def _get_text_without_tags(self):
+        """Remove HTML tags and remove."""
+        return self._parsed_page.get_text()
 
-def remove_special_tags(soup, tags):
-    """Completely remove script or style or any other special tags."""
-    for script in soup(tags):
-        script.extract()
-    return soup
+    def _get_pure_text(self):
+        """Remove multiple white spaces"""
+        return ' '.join(self._get_text_without_tags().split())
 
+    def _get_urls_from_page(self):
+        """Return list of URLs on HTML page"""
+        urls = [a['href'] for a in self._parsed_page.find_all('a', href=True)]
+        return self._normalize_url(urls)
 
-def remove_multiple_white_spaces(text):
-    """Remove multiple white spaces"""
-    return ' '.join(text.split())
-
-
-def remove_html_tags(page):
-    """Remove HTML tags and remove."""
-    soup = BeautifulSoup(page, 'html.parser')
-    remove_special_tags(soup, ["script", "style"])
-    return remove_multiple_white_spaces(soup.get_text())
-
-
-def validate_domain_in_url(scheme, domain, url):
-    """Return absolute url if domain in url or url is relative another return none"""
-    if url:
-        url_domain = urlparse(url)[1]
-        if url_domain == domain:
-            return url
-        elif url_domain == '':
-            return "{0}://{1}{3}{2}".format(
-                scheme, domain, url, ('/' if url[0] != '/' else '')
-            )
-    return None
-
-
-def get_urls_from_page(page, current_url):
-    """Return list of URLs on HTML page"""
-    soup = BeautifulSoup(page, 'html.parser')
-    remove_special_tags(soup, ["script", "style"])
-    urls = [a['href'] for a in soup.find_all('a', href=True)]
-    scheme, domain, *tail = urlparse(current_url)
-    clean_url = [validate_domain_in_url(scheme, domain, url) for url in urls]
-    return {a for a in clean_url if check_url(a)}
+    def _normalize_url(self, urls):
+        scheme, domain, url, *tail = urlparse(self.url)
+        normalized_url = []
+        for current_url in urls:
+            if current_url:
+                domain_in_current_url = urlparse(current_url)[1]
+                if domain_in_current_url == domain:
+                    normalized_url.append(current_url)
+                elif domain_in_current_url == '':
+                    # Does url from root or from this page
+                    if current_url.startswith('/'):
+                        normalized_url.append("{0}://{1}{2}".format(scheme, domain, current_url))
+                    else:
+                        normalized_url.append("{0}://{1}{2}{3}".format(scheme, domain, url, current_url))
+        return {clean_url for clean_url in normalized_url if check_url(clean_url)}
 
 
 class NormalizeText:
@@ -221,6 +236,7 @@ class ComparingText:
                     same += 1
         return same * 2 / (float(len(text_a[0]) + len(text_b[0]))*len(self._hash_method)) * 100
 
+
 def controller(page):
     """
     Controller  spider which parse pages and return list url and text
@@ -231,18 +247,18 @@ def controller(page):
     level_url_get = {page}
     map_page_content={}
     normalize = NormalizeText()
-    url_chek = level_url_get.difference(level_url)
-    while url_chek:
-        url_chek = level_url_get.difference(level_url)
-        for url in url_chek:
+    url_check = level_url_get.difference(level_url)
+    while url_check:
+        url_check = level_url_get.difference(level_url)
+        for url in url_check:
             print(url)
             level_url.add(url)
-            page = get_content(url)
-            decode_page = decode(page)
-            page_without_tags = remove_html_tags(decode_page)
-            normalize_page = normalize.normalize(page_without_tags)
-            map_page_content [url] =  normalize_page
-            level_url_get.update(get_urls_from_page(decode_page, url))
+            page = URLParser(url)                                # use class URLParser
+            # decode_page = decode(page)                         No need with class URLParser
+            # page_without_tags = remove_html_tags(decode_page)  No need with class URLParser
+            normalize_page = normalize.normalize(page.text)
+            map_page_content[url] = normalize_page
+            level_url_get.update(page.urls_on_page)
             print('len=',len(level_url_get))
             print ("delta len = ", len(level_url_get)-len(level_url))
 
@@ -253,13 +269,11 @@ if __name__ == '__main__':
     normalize = NormalizeText()
     text = []
     for url in get_url_list_from_file('urls.txt'):
-        page = get_content(url)
-        decode_page = decode(page)
-        page_without_tags = remove_html_tags(decode_page)
-        url_list = get_urls_from_page(decode_page, url)
-        normalize_page = normalize.normalize(page_without_tags)
+        page = URLParser(url)
+        url_list = page.urls_on_page
+        normalize_page = normalize.normalize(page.text)
         debug = True
-        print(page_without_tags)
+        print(page.text)
         print(normalize_page)
         text.append(normalize_page)
         print(url_list)
