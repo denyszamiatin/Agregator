@@ -81,14 +81,6 @@ class URLParser:
         self._urls = self._get_urls_from_page()
 
     @property
-    def url(self):
-        return self._url
-
-    @property
-    def raw_page(self):
-        return self.raw_page
-
-    @property
     def text(self):
         return self._text
 
@@ -99,8 +91,8 @@ class URLParser:
     def get_content(self):
         """ Get web page in bytes format by url. If something wrong return None """
         try:
-            if requests.head(self.url).status_code == 200:
-                return requests.get(self.url).content
+            if requests.head(self._url).status_code == 200:
+                return requests.get(self._url).content
             else:
                 return None
         except requests.exceptions.RequestException:
@@ -119,21 +111,17 @@ class URLParser:
         for un_t in self._parsed_page(self.UNDESIRABLE_TAGS):
             un_t.extract()
 
-    def _get_text_without_tags(self):
-        """Remove HTML tags and remove."""
-        return self._parsed_page.get_text()
-
     def _get_pure_text(self):
         """Remove multiple white spaces"""
-        return ' '.join(self._get_text_without_tags().split())
+        return ' '.join(self._parsed_page.get_text().split())
 
     def _get_urls_from_page(self):
         """Return list of URLs on HTML page"""
         urls = [a['href'] for a in self._parsed_page.find_all('a', href=True)]
-        return self._normalize_url(urls)
+        return self._normalize_urls(urls)
 
-    def _normalize_url(self, urls):
-        scheme, domain, url, *tail = urlparse(self.url)
+    def _normalize_urls(self, urls):
+        scheme, domain, url, *tail = urlparse(self._url)
         normalized_url = []
         for current_url in urls:
             if current_url:
@@ -245,17 +233,16 @@ def controller(page):
     print(page)
     level_url = set()
     level_url_get = {page}
-    map_page_content={}
+    map_page_content = {}
     normalize = NormalizeText()
-    url_check = level_url_get.difference(level_url)
-    while url_check:
-        url_check = level_url_get.difference(level_url)
+    while True:
+        url_check = level_url_get - level_url
+        if not url_check:
+            break
         for url in url_check:
             print(url)
             level_url.add(url)
             page = URLParser(url)                                # use class URLParser
-            # decode_page = decode(page)                         No need with class URLParser
-            # page_without_tags = remove_html_tags(decode_page)  No need with class URLParser
             normalize_page = normalize.normalize(page.text)
             map_page_content[url] = normalize_page
             level_url_get.update(page.urls_on_page)
