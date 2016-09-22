@@ -166,7 +166,7 @@ class NormalizeText:
         stop_words = set()
 
         def update_set(file_path):
-            with open(file_path, 'r') as f:
+            with open(file_path, 'r', encoding='utf-8') as f:
                 stop_words.update(set(f.read().splitlines()))
 
         test_lang = lambda name: name.startswith(self.language)\
@@ -264,6 +264,10 @@ def controller(page):
 
     print(map_page_content)
     return map_page_content
+
+
+def get_base_form_of_words(text, lag):
+    pass
 
 if __name__ == '__main__':
     normalize = NormalizeText()
