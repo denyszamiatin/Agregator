@@ -1,12 +1,14 @@
-import binascii
-import os.path
+import glob
+import itertools
 import re
+import reprlib
 import string
-from collections import OrderedDict
+from multiprocessing import Pool
 from urllib.parse import urlparse
 
 import chardet
 import requests
+import yaml
 from bs4 import BeautifulSoup
 
 VALID_URL_TEMPLATE = re.compile(
@@ -15,8 +17,10 @@ VALID_URL_TEMPLATE = re.compile(
 )
 
 
-class AgregatorError(Exception):
-    pass
+DICTIONARY_PATH = 'dictionaries'
+UNDESIRABLE_PUNCTUATION = '»—▼▲≡©'
+LANGUAGE = ('en', 'ru',)
+POOL_NUMBER = 5
 
 
 def check_url(url):
@@ -34,249 +38,224 @@ def check_url(url):
     return bool(url and VALID_URL_TEMPLATE.fullmatch(url))
 
 
-def get_url_list_from_file(file_path='urls.txt'): # TODO - this function may be a method of Spider
+def url_to_dict(url):
+    url = urlparse(url)
+    d = {'r_path': ''}
+    if url[0]:
+        d['scheme'] = url[0]
+    if url[1]:
+        d['netloc'] = url[1]
+    if url[2]:
+        path = url[2] + '/' if not url[2].endswith('/') else url[2]
+        if path.startswith('/'):
+            d['path'] = path
+        else:
+            d['r_path'] = path
+    return d
+
+
+def dict_url_to_string(url):
+    return '{scheme}://{netloc}{path}{r_path}'.format(**url)
+
+
+def parse_config_file(file):
+    with open(file, 'r') as config:
+        configuration = yaml.load(config)
+    return configuration
+
+
+def decode_string(content):
+    """Decode string to unicode string."""
+    # charset = chardet.detect(data)['encoding']
+    # try:
+    #     return data.decode(charset)
+    # except ValueError:
+    #     return ''
+    charset = chardet.detect(content)['encoding']
+    return content.decode(charset)
+
+
+def load_stop_words():
     """
-    Open file and return urls.txt of valid urls.txt.
-    >>> get_url_list_from_file(file_path='./tests/only_urls.txt')
-    ['http://itea.ua/courses-itea/python/python-advanced/', \
-'https://www.fullstackpython.com/best-python-resources.html', \
-'https://pymotw.com/3/', \
-'https://www.python.org/dev/peps/pep-0020/']
-    >>> get_url_list_from_file(file_path='./tests/mix_text_urls.txt')
-    ['http://itea.ua/courses-itea/python/python-advanced/', \
-'https://www.fullstackpython.com/best-python-resources.html', \
-'https://pymotw.com/3/', \
-'https://www.python.org/dev/peps/pep-0020/']
-    >>> get_url_list_from_file(file_path='./tests/text_without_url.txt')
-    Traceback (most recent call last):
-    ...
-    agregator.AgregatorError: No url in set file
-    >>> get_url_list_from_file(file_path='abrakadabra.txt')
-    Traceback (most recent call last):
-    ...
-    agregator.AgregatorError: File not found
-
+    Initializes set of stop words
     """
-    try:
-        with open(os.path.normpath(file_path), 'r') as f:
-            url_file = f.read()
-    except FileNotFoundError:
-        raise AgregatorError('File not found')
-    url_list = [url for url in url_file.split() if check_url(url)]
-    if not url_list:
-        raise AgregatorError('No url in set file')
-    return url_list
+    stop_words = set()
+
+    for file in glob.glob('{}/*.txt'.format(DICTIONARY_PATH)):
+        with open(file) as dictionary:
+            stop_words.update(set(dictionary.read().splitlines()))
+    return stop_words
 
 
-class URLParser:
+def get_page(url):
+    return Page(url)
+
+
+def gen_page(urls):
+    with Pool(POOL_NUMBER) as p:
+        d = p.map(get_page, urls)
+    return d
+
+
+def com_page(couple_of_page):
+    first, second = couple_of_page
+    return first.compare_page(second)
+
+
+def compare_page(pages):
+    with Pool(POOL_NUMBER) as p:
+        result = p.map(com_page, pages)
+    return result
+
+
+class Agregator:
+    def __init__(self, config_file='config.yml'):
+        config = parse_config_file(config_file)
+        self.urls_need_check = {url for url in config['url'] if check_url(url)}
+        self.requests = {Normalize.text(request) for request
+                         in config['requests']}
+        self.page_limit = config['page_limit']
+        self.pages = []
+        self.urls_check = set()
+        self.walk()
+
+    def walk(self):
+        while True:
+            delta = self.urls_need_check - self.urls_check
+            if not delta or len(self.pages) == self.page_limit:
+                break
+            limit = self.page_limit - len(self.pages)
+            part_of_urls = list(delta)[:limit]
+            new_page = gen_page(part_of_urls)
+            self.urls_check.update(set(part_of_urls))
+            for page in new_page:
+                if page:
+                    self.urls_need_check.update(page.urls_on_page)
+                    self.pages.append(page)
+
+    def compare_pages(self):
+        result = compare_page(list(itertools.combinations(self.pages, 2)))
+        for report in result:
+            print(report)
+
+
+class Page:
     UNDESIRABLE_TAGS = ('script', 'style')
 
-    def __init__(self, url, parser=BeautifulSoup):
+    def __init__(self, url):
+        self._valid_page = True
         self._url = url
-        self._parser = parser
-        self._raw_page = self.decode_page(self.get_content())
-        self._parsed_page = self._parser(self._raw_page, 'html.parser')
-        self._remove_special_tags()
-        self._text = self._get_pure_text()
-        self._urls = self._get_urls_from_page()
+        self._parser = BeautifulSoup
+        self._content, self._urls_on_page = self._parse_page()
 
-    @property
-    def url(self):
-        return self._url
+    def _parse_page(self):
+        decode_page = self._get_decode_content()
+        if self._valid_page:
+            soup = BeautifulSoup(decode_page, 'html.parser')
+            self._remove_special_tags(soup)
+            content = Normalize.text(' '.join(soup.get_text().split()))
+            return content, self._get_urls_from_page(soup)
+        else:
+            return decode_page, set()
 
-    @property
-    def raw_page(self):
-        return self.raw_page
-
-    @property
-    def text(self):
-        return self._text
-
-    @property
-    def urls_on_page(self):
-        return self._urls
-
-    def get_content(self):
-        """ Get web page in bytes format by url. If something wrong return None """
+    def _get_decode_content(self):
         try:
-            if requests.head(self.url).status_code == 200:
-                return requests.get(self.url).content
+            if requests.head(self._url).status_code == 200:
+                return decode_string(requests.get(self._url).content)
             else:
-                return None
-        except requests.exceptions.RequestException:
-            return None
-
-    @staticmethod
-    def decode_page(data):
-        charset = chardet.detect(data)['encoding']
-        try:
-            return data.decode(charset)
-        except ValueError:
+                raise ValueError
+        except (ValueError, requests.exceptions.RequestException):
+            self._valid_page = False
             return ''
 
-    def _remove_special_tags(self):
-        """Completely remove script or style or any other special tags."""
-        for un_t in self._parsed_page(self.UNDESIRABLE_TAGS):
-            un_t.extract()
+    def _remove_special_tags(self, soup):
+        for block in soup(self.UNDESIRABLE_TAGS):
+            block.extract()
 
-    def _get_text_without_tags(self):
-        """Remove HTML tags and remove."""
-        return self._parsed_page.get_text()
-
-    def _get_pure_text(self):
-        """Remove multiple white spaces"""
-        return ' '.join(self._get_text_without_tags().split())
-
-    def _get_urls_from_page(self):
+    def _get_urls_from_page(self, soup):
         """Return list of URLs on HTML page"""
-        urls = [a['href'] for a in self._parsed_page.find_all('a', href=True)]
+        urls = [a['href'] for a in soup.find_all('a', href=True)]
         return self._normalize_url(urls)
 
     def _normalize_url(self, urls):
-        scheme, domain, url, *tail = urlparse(self.url)
-        normalized_url = []
-        for current_url in urls:
-            if current_url:
-                domain_in_current_url = urlparse(current_url)[1]
-                if domain_in_current_url == domain:
-                    normalized_url.append(current_url)
-                elif domain_in_current_url == '':
-                    # Does url from root or from this page
-                    if current_url.startswith('/'):
-                        normalized_url.append("{0}://{1}{2}".format(scheme, domain, current_url))
-                    else:
-                        normalized_url.append("{0}://{1}{2}{3}".format(scheme, domain, url, current_url))
-        return {clean_url for clean_url in normalized_url if check_url(clean_url)}
-
-
-class NormalizeText:
-    def __init__(self, dictionary_path='dictionaries',
-                 undesirable_punctuation='»—▼▲≡©',
-                 language=tuple()):
-        self.dictionary_path = dictionary_path
-        self.language = language
-        self.stop_words = self.load_stop_words()
-        self.undesirable_punctuation = {ord(char):' ' for char in
-             (string.punctuation + undesirable_punctuation)}
-
-    def load_stop_words(self):
         """
-        Initializes set of stop words(from files in folder)
+        >>> p = Page
+        >>> p._url = 'http://itea.ua/courses-itea/python/python-advanced/'
+        >>> p._normalize_url(p, urls=['/contacts/', 'http://itea.ua/premises-lease/', 'some_other_page'])
+        {'http://itea.ua/premises-lease/', 'http://itea.ua/contacts/', 'http://itea.ua/courses-itea/python/python-advanced/some_other_page/'}
         """
-        stop_words = set()
+        normalized_url = set()
+        base_url_dict = url_to_dict(self._url)
+        for url in urls:
+            normalized_url.add(dict_url_to_string(
+                dict(base_url_dict, **url_to_dict(url))))
 
-        def update_set(file_path):
-            with open(file_path, 'r') as f:
-                stop_words.update(set(f.read().splitlines()))
+        return {url for url in normalized_url if check_url(url)}
 
-        test_lang = lambda name: name.startswith(self.language)\
-            if self.language else lambda x: True
-        for root, dirs, files in os.walk(self.dictionary_path):
-            for name in files:
-                if test_lang(name):
-                    update_set(os.path.join(root, name))
+    def compare_page(self, other_page, shingle_length=10):
+        other_url = other_page._url
+        def get_hash(text):
+            return [hash(section.encode()) for section in get_shingles(text)]
 
-        return stop_words
+        def get_shingles(text):
+            shingles = []
+            s_text = text.split()
+            for i in range(len(s_text) - (shingle_length - 1)):
+                shingles.append(
+                    ' '.join([x for x in s_text[i:i + shingle_length]]))
+            return tuple(shingles)
 
-    def normalize(self, raw_text):
+        original = get_hash(self.text)
+        other_page = get_hash(other_page.text)
+        same = 0
+        # same = len(set(original) & set(other_page))
+        for shingle in original:
+            if shingle in other_page:
+                same += 1
+
+        same * 2 / (float(len(original) + len(other_page))) * 100
+
+        return 'Content from this web page {} repeat content from that ' \
+               'web page {} by {}%.'.format(self._url, other_url, same)
+
+    @property
+    def text(self):
+        return self._content
+
+    @property
+    def urls_on_page(self):
+        return self._urls_on_page
+
+    def __bool__(self):
+        return self._valid_page
+
+    def __repr__(self):
+        return "{}('{}')".format(type(self.__name__), reprlib.repr(self._url))
+
+
+class Normalize:
+    stop_words = load_stop_words()
+    unnecessary_char = {ord(char): ' ' for char in
+                        (string.punctuation + '»—▼▲≡©')}
+
+    @classmethod
+    def text(cls, raw_text):
         """
         Return normalize text in lower case without: undesirable punctuation
         and stop words.
-        >>> normalize = NormalizeText()
-        >>> normalize.normalize('Я только хотел сказать, что эти стоп-слова '\
-        '— сложная штука.')
+        >>> Normalize.text('Я только хотел сказать, что эти '\
+        'стоп-слова — сложная штука.')
         'хотел стоп слова сложная штука'
-        >>> normalize.normalize('What are your goals?')
+        >>> Normalize.text('What are your goals?')
         'goals'
         """
-        text = raw_text.translate(self.undesirable_punctuation).lower()
-        text = ' '.join([word for word in text.split() if not word in
-                                                              self.stop_words])
+        text = raw_text.translate(cls.unnecessary_char).lower()
+        text = ' '.join([word for word in text.split() if word not in
+                         cls.stop_words])
         return text
 
 
-class ComparingText:
-    """Comparing two text"""
-    _hash_method = OrderedDict({'hash': hash, 'binascii.crc32': binascii.crc32})
-
-    def __init__(self, text1, text2, shingle_length=10):
-        self._shingle_length = shingle_length
-        self.text1 = text1
-        self.text2 = text2
-
-        self._shingle_text1 = self.get_shingles(text1)
-        self._shingle_text2 = self.get_shingles(text2)
-
-        self.hash_text1 = self.get_hash(self._shingle_text1)
-        self.hash_text2 = self.get_hash(self._shingle_text2)
-
-    def get_shingles(self, text):
-        shingles = []
-        s_text = text.split()
-        for i in range(len(s_text) - (self._shingle_length - 1)):
-            shingles.append(' '.join([x for x in s_text[i:i+self._shingle_length]]))
-        return tuple(shingles)
-
-    def get_hash(self, shingle):
-        hash_array = []
-        for method in self._hash_method.values():
-            hash_array.append([method(section.encode()) for section in shingle])
-        return hash_array
-
-    def compare(self):
-        same = 0
-        if len(self.hash_text1[0]) >= len(self.hash_text2[0]):
-            text_a, text_b = self.hash_text1, self.hash_text2
-        else:
-            text_b, text_a = self.hash_text1, self.hash_text2
-        min_size = len(text_b[0])
-        for i in range(len(self._hash_method)):
-            for j in range(min_size):
-                if text_b[i][j] in text_a[i]:
-                    same += 1
-        return same * 2 / (float(len(text_a[0]) + len(text_b[0]))*len(self._hash_method)) * 100
-
-
-def controller(page):
-    """
-    Controller  spider which parse pages and return list url and text
-
-    """
-    print(page)
-    level_url = set()
-    level_url_get = {page}
-    map_page_content={}
-    normalize = NormalizeText()
-    url_check = level_url_get.difference(level_url)
-    while url_check:
-        url_check = level_url_get.difference(level_url)
-        for url in url_check:
-            print(url)
-            level_url.add(url)
-            page = URLParser(url)                                # use class URLParser
-            # decode_page = decode(page)                         No need with class URLParser
-            # page_without_tags = remove_html_tags(decode_page)  No need with class URLParser
-            normalize_page = normalize.normalize(page.text)
-            map_page_content[url] = normalize_page
-            level_url_get.update(page.urls_on_page)
-            print('len=',len(level_url_get))
-            print ("delta len = ", len(level_url_get)-len(level_url))
-
-    print(map_page_content)
-    return map_page_content
-
 if __name__ == '__main__':
-    normalize = NormalizeText()
-    text = []
-    for url in get_url_list_from_file('urls.txt'):
-        page = URLParser(url)
-        url_list = page.urls_on_page
-        normalize_page = normalize.normalize(page.text)
-        debug = True
-        print(page.text)
-        print(normalize_page)
-        text.append(normalize_page)
-        print(url_list)
+    a = Agregator()
+    a.compare_pages()
 
-    comparing = ComparingText(text[0], text[1]).compare()
-    print(comparing)
