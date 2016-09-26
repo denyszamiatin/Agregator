@@ -10,7 +10,8 @@ import requests
 from bs4 import BeautifulSoup
 
 VALID_URL_TEMPLATE = re.compile(
-    'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F]'
+    'http[s]?://(?:[w]{3}[.])?(?:[\w]+[.][a-z]+)'
+    '(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F]'
     '[0-9a-fA-F]))+'
 )
 
