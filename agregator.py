@@ -3,8 +3,11 @@ import itertools
 import re
 import reprlib
 import string
-from multiprocessing import Pool
+from multiprocessing import Process, Pool, Queue, Value, Lock
 from urllib.parse import urlparse
+import pickle
+import zlib
+import gc
 
 import chardet
 import requests
@@ -20,8 +23,7 @@ VALID_URL_TEMPLATE = re.compile(
 DICTIONARY_PATH = 'dictionaries'
 UNDESIRABLE_PUNCTUATION = '»—▼▲≡©'
 LANGUAGE = ('en', 'ru',)
-POOL_NUMBER = 5
-
+POOL_NUMBER = 1
 
 def check_url(url):
     """
@@ -66,11 +68,6 @@ def parse_config_file(file):
 
 def decode_string(content):
     """Decode string to unicode string."""
-    # charset = chardet.detect(data)['encoding']
-    # try:
-    #     return data.decode(charset)
-    # except ValueError:
-    #     return ''
     charset = chardet.detect(content)['encoding']
     return content.decode(charset)
 
@@ -87,14 +84,28 @@ def load_stop_words():
     return stop_words
 
 
-def get_page(url):
-    return Page(url)
-
-
-def gen_page(urls):
-    with Pool(POOL_NUMBER) as p:
-        d = p.map(get_page, urls)
-    return d
+def get_page_process(pages_q, urls_q, new_urls_q, lock: Lock):
+    print("Start")
+    while True:
+        lock.acquire()
+        print("lock.acquire")
+        if not urls_q.empty():
+            print("Queue not empty")
+            url = urls_q.get()
+            print("Got an url ", url)
+        else:
+            print("lock.release")
+            lock.release()
+            break
+        print("lock.release")
+        lock.release()
+        p = Page(url)
+        if p:
+            print(p.urls_on_page)
+            for url in p.urls_on_page:
+                new_urls_q.put(url)
+            #pages_q.put(zlib.compress(pickle.dumps(p), 7))
+    print("Finish")
 
 
 def com_page(couple_of_page):
@@ -111,32 +122,65 @@ def compare_page(pages):
 class Agregator:
     def __init__(self, config_file='config.yml'):
         config = parse_config_file(config_file)
-        self.urls_need_check = {url for url in config['url'] if check_url(url)}
+        self.urls_need_process = {url for url in config['url'] if check_url(url)}
         self.requests = {Normalize.text(request) for request
                          in config['requests']}
         self.page_limit = config['page_limit']
         self.pages = []
-        self.urls_check = set()
-        self.walk()
+        self.urls_processed = set()
+   #    self.walk()
 
-    def walk(self):
-        while True:
-            delta = self.urls_need_check - self.urls_check
-            if not delta or len(self.pages) == self.page_limit:
-                break
-            limit = self.page_limit - len(self.pages)
-            part_of_urls = list(delta)[:limit]
-            new_page = gen_page(part_of_urls)
-            self.urls_check.update(set(part_of_urls))
-            for page in new_page:
-                if page:
-                    self.urls_need_check.update(page.urls_on_page)
-                    self.pages.append(page)
+   # def walk(self):
+   #     while True:
+   #
+   #        if not delta or len(self.pages) == self.page_limit:
+   #             break
+   #        limit = self.page_limit - len(self.pages)
+   #         part_of_urls = list(delta)[:limit]
+   #        new_page = gen_page(part_of_urls)
+   #        self.urls_processed.update(set(part_of_urls))
+   #        for page in new_page:
+   #            if page:
+   #                self.urls_need_process.update(page.urls_on_page)
+   #                self.pages.append(page)
 
     def compare_pages(self):
         result = compare_page(list(itertools.combinations(self.pages, 2)))
         for report in result:
             print(report)
+
+    def start_downloading(self):
+        lock = Lock()
+        urls_q = Queue()
+        pages_q = Queue()
+        new_urls_q = Queue()
+        downloaded_page_count = 0
+        while downloaded_page_count < self.page_limit:
+            print("Start new task")
+            for url in self.urls_need_process:
+                urls_q.put(url)
+            pool = []
+            for i in range(POOL_NUMBER):
+                ps = Process(target=get_page_process, args=(pages_q, urls_q, new_urls_q, lock))
+                pool.append(ps)
+                ps.start()
+            for ps in pool:
+                ps.join()
+            print("Process finished")
+            downloaded_page_count = len(self.urls_need_process)
+            self.urls_processed.update(self.urls_need_process)
+            self.urls_need_process.clear()
+            limit = self.page_limit - downloaded_page_count
+            while not new_urls_q.empty() and limit > 0:
+                next_url = new_urls_q.get()
+                self.urls_need_process.add(next_url)
+                limit -= 1
+                print(next_url)
+            self.urls_need_process = self.urls_need_process - self.urls_processed
+            if not self.urls_need_process:
+                break
+        print("All task done!")
+
 
 
 class Page:
@@ -212,8 +256,7 @@ class Page:
         for shingle in original:
             if shingle in other_page:
                 same += 1
-
-        same * 2 / (float(len(original) + len(other_page))) * 100
+        same = same / len(other_page) * 100
 
         return 'Content from this web page {} repeat content from that ' \
                'web page {} by {}%.'.format(self._url, other_url, same)
@@ -231,6 +274,15 @@ class Page:
 
     def __repr__(self):
         return "{}('{}')".format(type(self.__name__), reprlib.repr(self._url))
+
+    def __setstate__(self, dct):
+        self.__dict__ = dct
+        self._parser = BeautifulSoup
+
+    def __getstate__(self):
+        dct = self.__dict__.copy()
+        del dct['_parser']
+        return dct
 
 
 class Normalize:
@@ -257,5 +309,6 @@ class Normalize:
 
 if __name__ == '__main__':
     a = Agregator()
-    a.compare_pages()
+    a.start_downloading()
+    # a.compare_pages()
 
