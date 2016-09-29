@@ -87,9 +87,9 @@ def load_stop_words():
 def get_page_process(pages_q, urls_q, new_urls_q, lock: Lock):
     #print("Start")
     while True:
-        lock.acquire()
+        lock.acquire() # TODO deleate locks
      #   print("lock.acquire")
-        if not urls_q.empty():
+        if not urls_q.empty(): # TODO empty queue is bad way
       #      print("Queue not empty")
             url = urls_q.get()
       #      print("Got an url ", url)
