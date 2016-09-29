@@ -10,8 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 
 VALID_URL_TEMPLATE = re.compile(
-    'http[s]?://(?:[w]{3}[.])?(?:[\w]+[.][a-z]+)'
-    '(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F]'
+    'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F]'
     '[0-9a-fA-F]))+'
 )
 
@@ -56,7 +55,6 @@ def get_url_list_from_file(file_path='urls.txt'): # TODO - this function may be 
     Traceback (most recent call last):
     ...
     agregator.AgregatorError: File not found
-
     """
     try:
         with open(os.path.normpath(file_path), 'r') as f:
@@ -68,18 +66,93 @@ def get_url_list_from_file(file_path='urls.txt'): # TODO - this function may be 
         raise AgregatorError('No url in set file')
     return url_list
 
+class GetContentThreading:
+
+    def __init__(self,url):
+        self._url = url
+
+
+import threading
+import queue
+
+import time
+
+
+def timeit(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+
+        print('%r (%r, %r) %2.2f sec' % \
+              (method.__name__, args, kw, te - ts))
+        return result
+
+    return timed
+
+
+class Therese:
+    def __init__(self, set_url):
+        self._set_url = set_url
+        self.set_page = {}
+        self.n = 4
+        self.q = queue.Queue(maxsize=self.n)
+
+    def get_content(self):
+        """ Get web page in bytes format by url. If something wrong return None """
+        try:
+            if requests.head(self.item).status_code == 200:
+                return requests.get(self.item).content
+            else:
+                return False
+        except requests.exceptions.RequestException:
+            return False
+
+    def get_url(self):
+        while True:
+            self.item = self.q.get()
+            if self.item is None:
+                break
+            respo = self.get_content()
+            self.q.task_done()
+
+            if  respo :
+                self.set_page[self.item]=respo
+            print(len(self.set_page))
+
+    @timeit
+    def ther(self):
+        threads = []
+        for i in range(self.n):
+            print(i)
+            t = threading.Thread(target=self.get_url)
+            t.start()
+            threads.append(t)
+
+        for self.item in self._set_url:
+            self.q.put(self.item)
+            # block until all tasks are done
+            self.q.join()
+        # stop workers
+        for i in range(self.n):
+            self.q.put(None)
+        for t in threads:
+            t.join()
+        return self.set_page
 
 class URLParser:
     UNDESIRABLE_TAGS = ('script', 'style')
 
-    def __init__(self, url, parser=BeautifulSoup):
+    def __init__(self, url,page, parser=BeautifulSoup):
         self._url = url
         self._parser = parser
-        self._raw_page = self.decode_page(self.get_content())
-        self._parsed_page = self._parser(self._raw_page, 'html.parser')
+        self._page = page
+        self._raw_page = self.decode_page( self._page)
+        self._parsed_page = self._parser( self._raw_page, 'html.parser')
         self._remove_special_tags()
         self._text = self._get_pure_text()
         self._urls = self._get_urls_from_page()
+
 
     @property
     def text(self):
@@ -89,22 +162,18 @@ class URLParser:
     def urls_on_page(self):
         return self._urls
 
-    def get_content(self):
-        """ Get web page in bytes format by url. If something wrong return None """
-        try:
-            if requests.head(self._url).status_code == 200:
-                return requests.get(self._url).content
-            else:
-                return None
-        except requests.exceptions.RequestException:
-            return None
+
 
     @staticmethod
     def decode_page(data):
-        charset = chardet.detect(data)['encoding']
+        print("-------------",data)
+        try:
+            charset = chardet.detect(data)['encoding']
+        except TypeError:
+            return ''
         try:
             return data.decode(charset)
-        except ValueError:
+        except (ValueError,TypeError):
             return ''
 
     def _remove_special_tags(self):
@@ -225,50 +294,63 @@ class ComparingText:
                     same += 1
         return same * 2 / (float(len(text_a[0]) + len(text_b[0]))*len(self._hash_method)) * 100
 
-
-def controller(page):
+class Controller:
     """
-    Controller  spider which parse pages and return list url and text
-
+        Controller  spider which parse pages and return list url and text
     """
-    print(page)
-    level_url = set()
-    level_url_get = {page}
-    map_page_content = {}
-    normalize = NormalizeText()
-    while True:
-        url_check = level_url_get - level_url
-        if not url_check:
-            break
-        for url in url_check:
+
+    def __init__(self, page) :
+        print(page)
+        self.level_url_get = {page}
+        print(self.level_url_get)
+        self.level_url = set()
+        self.map_page_content={}
+        self.normalize = NormalizeText()
+
+
+    def url_kounter(self):
+        i = 0
+        while i<3:
+            self.url_check = self.level_url_get-self.level_url
+            if not self.url_check:
+                break
+            self.get_conten = Therese ( self.url_check).ther()
+            self.url_work()
+            i+=1
+
+
+        return self.map_page_content
+
+    def url_work(self):
+        print(self.get_conten)
+        for url in self.get_conten:
             print(url)
-            level_url.add(url)
-            page = URLParser(url)                                # use class URLParser
+            self.level_url.add(url)
+            print(self.get_conten[url])
+            page = URLParser(url,self.get_conten[url])  # use class URLParser
             normalize_page = normalize.normalize(page.text)
-            map_page_content[url] = normalize_page
-            level_url_get.update(page.urls_on_page)
-            print('len=',len(level_url_get))
-            print ("delta len = ", len(level_url_get)-len(level_url))
+            self.map_page_content[url] = normalize_page
+            self.level_url_get.update(page.urls_on_page)
+            print('len=', len(self.level_url_get))
+            print("delta len = ", len(self.level_url_get) - len(self.level_url))
 
-    print(map_page_content)
-    return map_page_content
+
+
 
 
 def get_base_form_of_words(text, lag):
     pass
 
 if __name__ == '__main__':
+    print("!!!!!!!!!!!!!!!!!!")
     normalize = NormalizeText()
     text = []
     for url in get_url_list_from_file('urls.txt'):
-        page = URLParser(url)
-        url_list = page.urls_on_page
-        normalize_page = normalize.normalize(page.text)
-        debug = True
-        print(page.text)
-        print(normalize_page)
-        text.append(normalize_page)
-        print(url_list)
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        controlers=Controller(url)
+        print (controlers.url_kounter())
+
+
 
     comparing = ComparingText(text[0], text[1]).compare()
     print(comparing)
