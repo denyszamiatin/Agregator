@@ -98,11 +98,12 @@ class Therese:
         self.n = 4
         self.q = queue.Queue(maxsize=self.n)
 
-    def get_content(self):
+    def get_content(self, url):
         """ Get web page in bytes format by url. If something wrong return None """
+        print(url)
         try:
-            if requests.head(self.item).status_code == 200:
-                return requests.get(self.item).content
+            if requests.head(url).status_code == 200:
+                return requests.get(url).content
             else:
                 return False
         except requests.exceptions.RequestException:
@@ -110,34 +111,28 @@ class Therese:
 
     def get_url(self):
         while True:
-            self.item = self.q.get()
-            if self.item is None:
+            item = self.q.get()
+            if item is None:
                 break
-            respo = self.get_content()
+            respo = self.get_content(item)
             self.q.task_done()
 
             if  respo :
-                self.set_page[self.item]=respo
+                self.set_page[item]=respo
             print(len(self.set_page))
 
     @timeit
     def ther(self):
-        threads = []
         for i in range(self.n):
             print(i)
             t = threading.Thread(target=self.get_url)
             t.start()
-            threads.append(t)
 
-        for self.item in self._set_url:
-            self.q.put(self.item)
+        for item in self._set_url:
+            self.q.put(item)
             # block until all tasks are done
-            self.q.join()
+        self.q.join()
         # stop workers
-        for i in range(self.n):
-            self.q.put(None)
-        for t in threads:
-            t.join()
         return self.set_page
 
 class URLParser:
