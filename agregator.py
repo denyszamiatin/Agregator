@@ -23,7 +23,7 @@ VALID_URL_TEMPLATE = re.compile(
 DICTIONARY_PATH = 'dictionaries'
 UNDESIRABLE_PUNCTUATION = '»—▼▲≡©'
 LANGUAGE = ('en', 'ru',)
-POOL_NUMBER = 1
+POOL_NUMBER = 2
 
 def check_url(url):
     """
@@ -85,27 +85,27 @@ def load_stop_words():
 
 
 def get_page_process(pages_q, urls_q, new_urls_q, lock: Lock):
-    print("Start")
+    #print("Start")
     while True:
         lock.acquire()
-        print("lock.acquire")
+     #   print("lock.acquire")
         if not urls_q.empty():
-            print("Queue not empty")
+      #      print("Queue not empty")
             url = urls_q.get()
-            print("Got an url ", url)
+      #      print("Got an url ", url)
         else:
-            print("lock.release")
+      #      print("lock.release")
             lock.release()
             break
-        print("lock.release")
+      #  print("lock.release")
         lock.release()
         p = Page(url)
         if p:
-            print(p.urls_on_page)
+      #      print(p.urls_on_page)
             for url in p.urls_on_page:
                 new_urls_q.put(url)
-            #pages_q.put(zlib.compress(pickle.dumps(p), 7))
-    print("Finish")
+            pages_q.put(zlib.compress(pickle.dumps(p), 7))
+    #print("Finish")
 
 
 def com_page(couple_of_page):
@@ -128,21 +128,6 @@ class Agregator:
         self.page_limit = config['page_limit']
         self.pages = []
         self.urls_processed = set()
-   #    self.walk()
-
-   # def walk(self):
-   #     while True:
-   #
-   #        if not delta or len(self.pages) == self.page_limit:
-   #             break
-   #        limit = self.page_limit - len(self.pages)
-   #         part_of_urls = list(delta)[:limit]
-   #        new_page = gen_page(part_of_urls)
-   #        self.urls_processed.update(set(part_of_urls))
-   #        for page in new_page:
-   #            if page:
-   #                self.urls_need_process.update(page.urls_on_page)
-   #                self.pages.append(page)
 
     def compare_pages(self):
         result = compare_page(list(itertools.combinations(self.pages, 2)))
@@ -167,15 +152,16 @@ class Agregator:
             for ps in pool:
                 ps.join()
             print("Process finished")
-            downloaded_page_count = len(self.urls_need_process)
+            downloaded_page_count += len(self.urls_need_process)
             self.urls_processed.update(self.urls_need_process)
             self.urls_need_process.clear()
             limit = self.page_limit - downloaded_page_count
+            print(limit)
             while not new_urls_q.empty() and limit > 0:
                 next_url = new_urls_q.get()
                 self.urls_need_process.add(next_url)
                 limit -= 1
-                print(next_url)
+                #print(next_url)
             self.urls_need_process = self.urls_need_process - self.urls_processed
             if not self.urls_need_process:
                 break
