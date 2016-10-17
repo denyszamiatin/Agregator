@@ -1,3 +1,4 @@
 beautifulsoup4
-requests==2.11.1
-chardet==2.3.0
+requests
+chardet
+Hunspell
