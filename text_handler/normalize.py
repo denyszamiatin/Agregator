@@ -1,6 +1,6 @@
 import string
 import glob
-from text_handler.basic_form import BasicForm
+from text_handler.basic_form import convert
 
 
 DICTIONARY_PATH = 'dictionaries'
@@ -27,6 +27,6 @@ class Normalize:
     @classmethod
     def text(cls, raw_text):
         text = raw_text.translate(cls.unnecessary_char).lower()
-        text = ' '.join([BasicForm.convert(word) for word in text.split()
+        text = ' '.join([convert(word) for word in text.split()
                          if word not in cls.stop_words])
         return text

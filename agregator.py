@@ -46,10 +46,7 @@ class Agregator:
 
     def find_requests_in_page(self):
         for request in self.requests:
-            urls = []
-            for page in self.pages:
-                if request in page.text:
-                    urls.append(page.url)
+            urls = [page.url for page in self.pages if request in page.text]
             if urls:
                 print('Request - "{}" you can find in next url(s): \n\t{}'.
                       format(request, '\n\t'.join(urls)))
