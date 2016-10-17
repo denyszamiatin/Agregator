@@ -98,41 +98,50 @@ class Therese:
         self.n = 4
         self.q = queue.Queue(maxsize=self.n)
 
-    def get_content(self, url):
+    def get_content(self):
         """ Get web page in bytes format by url. If something wrong return None """
-        print(url)
         try:
-            if requests.head(url).status_code == 200:
-                return requests.get(url).content
+            if requests.head(self.item).status_code == 200:
+                return requests.get(self.item).content
             else:
                 return False
         except requests.exceptions.RequestException:
             return False
 
     def get_url(self):
+        i = 0
         while True:
-            item = self.q.get()
-            if item is None:
+            self.item = self.q.get()
+            if self.item is None:
                 break
-            respo = self.get_content(item)
+            respo = self.get_content()
             self.q.task_done()
-
             if  respo :
-                self.set_page[item]=respo
-            print(len(self.set_page))
+                self.set_page[self.item]=respo
+
+
 
     @timeit
     def ther(self):
+        threads = []
+        step = 0
         for i in range(self.n):
-            print(i)
             t = threading.Thread(target=self.get_url)
             t.start()
+            threads.append(t)
 
-        for item in self._set_url:
-            self.q.put(item)
+        for self.item in self._set_url:
+            self.q.put(self.item)
             # block until all tasks are done
-        self.q.join()
+            self.q.join()
+            step+=1
+            print("step_th=",step)
+            if step>9: break
         # stop workers
+        for i in range(self.n):
+            self.q.put(None)
+        for t in threads:
+            t.join()
         return self.set_page
 
 class URLParser:
@@ -295,9 +304,7 @@ class Controller:
     """
 
     def __init__(self, page) :
-        print(page)
         self.level_url_get = {page}
-        print(self.level_url_get)
         self.level_url = set()
         self.map_page_content={}
         self.normalize = NormalizeText()
@@ -305,30 +312,26 @@ class Controller:
 
     def url_kounter(self):
         i = 0
-        while i<3:
+        while i<2:
+            print("step=",i)
             self.url_check = self.level_url_get-self.level_url
             if not self.url_check:
                 break
             self.get_conten = Therese ( self.url_check).ther()
             self.url_work()
             i+=1
-
-
         return self.map_page_content
 
     def url_work(self):
-        print(self.get_conten)
+        i=0
         for url in self.get_conten:
-            print(url)
+            i +=1
             self.level_url.add(url)
-            print(self.get_conten[url])
             page = URLParser(url,self.get_conten[url])  # use class URLParser
             normalize_page = normalize.normalize(page.text)
             self.map_page_content[url] = normalize_page
+            print( self.map_page_content)
             self.level_url_get.update(page.urls_on_page)
-            print('len=', len(self.level_url_get))
-            print("delta len = ", len(self.level_url_get) - len(self.level_url))
-
 
 
 
@@ -337,15 +340,11 @@ def get_base_form_of_words(text, lag):
     pass
 
 if __name__ == '__main__':
-    print("!!!!!!!!!!!!!!!!!!")
     normalize = NormalizeText()
-    text = []
+    pages_maps = []
     for url in get_url_list_from_file('urls.txt'):
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        controlers=Controller(url)
-        print (controlers.url_kounter())
-
-
-
-    comparing = ComparingText(text[0], text[1]).compare()
-    print(comparing)
+        controlers=Controller(url).url_kounter()
+        pages_maps.append(controlers)
+    url1 = list(pages_maps[0].keys())
+    comparet = ComparingText(pages_maps[0][url1[0]],pages_maps[0][url1[1]])
+    print(comparet)
