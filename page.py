@@ -4,6 +4,7 @@ from multiprocessing import Pool
 import requests
 from bs4 import BeautifulSoup
 
+from model.mongo import MongoDBConnection, DuplicateKeyError
 from text_handler.decode_text import decode_text
 from text_handler.normalize import Normalize
 from url_handler.urleee import url_to_dict, dict_url_to_string, check_url
@@ -37,9 +38,24 @@ class Page:
 
     def __init__(self, url):
         self._valid_page = True
-        self._url = url
         self._parser = BeautifulSoup
-        self._content, self._urls_on_page = self._parse_page()
+        self._url = url
+        self._content, self._urls_on_page = self.change_name()
+
+    def change_name(self):
+        with MongoDBConnection() as mongo:
+            page = mongo.connection.test.agregator.find_one({'_id': self.url})
+            if page is None:
+                content, urls_on_page = self._parse_page()
+                try:
+                    page = mongo.connection.test.agregator.insert(
+                        {'_id': self.url,
+                         'content': content,
+                         'urls_on_page': list(urls_on_page)})
+                    return content, urls_on_page
+                except DuplicateKeyError:
+                    self.change_name()
+            return page['content'], set(page['urls_on_page'])
 
     @property
     def url(self):

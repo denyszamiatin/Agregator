@@ -3,3 +3,4 @@ requests
 chardet
 Hunspell
 PyYaml
+pymongo
