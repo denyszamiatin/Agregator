@@ -40,9 +40,9 @@ class Page:
         self._valid_page = True
         self._parser = BeautifulSoup
         self._url = url
-        self._content, self._urls_on_page = self.change_name()
+        self._content, self._urls_on_page = self.cache()
 
-    def change_name(self):
+    def cache(self):
         with MongoDBConnection() as mongo:
             page = mongo.connection.test.agregator.find_one({'_id': self.url})
             if page is None:
@@ -54,7 +54,7 @@ class Page:
                          'urls_on_page': list(urls_on_page)})
                     return content, urls_on_page
                 except DuplicateKeyError:
-                    self.change_name()
+                    self.cache()
             return page['content'], set(page['urls_on_page'])
 
     @property
